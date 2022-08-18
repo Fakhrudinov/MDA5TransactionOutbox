@@ -25,6 +25,8 @@ namespace Restaurant.Booking
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
 
+            int lasagnaExceptionCounter = 1;//каждый 4й random запрос должен быть с lasagna
+
             while (true)
             {
                 Console.WriteLine("\r\n\tВыберите действие:\r\n" +
@@ -32,15 +34,16 @@ namespace Restaurant.Booking
                     "\t\t1 Забронировать столик (без опозданий) асинхронно с нормальным блюдом\r\n" +
                     "\t\t2 Забронировать столик (без опозданий) aсинхронно с отказным блюдом\r\n" +
                     "\t\t3 Забронировать столик (точно опоздает) асинхронно с нормальным блюдом\r\n" +
-                    "\t\t4 Забронировать столик (random) aсинхронно с нормальным блюдом\r\n" +
-                    "\t\t5 Снять бронь\r\n"
+                    "\t\t4 Забронировать столик (random) aсинхронно с нормальным блюдом (каждое 4е с exception)\r\n" +
+                    "\t\t5 Забронировать столик (без опозданий) aсинхронно с Exception на кухне\r\n" +
+                    "\t\t6 Снять бронь\r\n"
                     );
 
                 string userInput = Console.ReadLine();
 
-                if (int.TryParse(userInput, out int choise) && (choise < 0 || choise > 5))
+                if (int.TryParse(userInput, out int choise) && (choise < 0 || choise > 6))
                 {
-                    Console.WriteLine("\tВнимание, некорректный ввод! допускается только целые числа  0  1  2  3  4  5");
+                    Console.WriteLine("\tВнимание, некорректный ввод! допускается только целые числа  0  1  2  3  4  5 6");
                     continue;
                 }
 
@@ -96,7 +99,31 @@ namespace Restaurant.Booking
                             ),
                         stoppingToken);
                 }
-                else if (choise == 4)//random client and correct order
+                else if (choise == 4)//random client and correct order (every 4th is exception at kitchen)
+                {
+                    Console.WriteLine($"Worker=Заказ #{orderId}, для клиента #{clientId}");
+
+                    Dish currentDish = new Dish { Id = _random.Next(0, 2) };
+
+                    if (lasagnaExceptionCounter == 4)
+                    {
+                        currentDish.Id = 3;//lasagna
+                        lasagnaExceptionCounter = 0;//4 для компенсации '++' ниже 
+                     }
+
+                    await _bus.Publish(
+                        (IBookingRequest)new BookingRequested(
+                            orderId,
+                            clientId,
+                            currentDish,
+                            bookingArrivalTime,
+                            actualArrivalTime
+                            ),
+                        stoppingToken);
+
+                    lasagnaExceptionCounter++;
+                }
+                else if (choise == 5)//correct client and order with exception
                 {
                     Console.WriteLine($"Worker=Заказ #{orderId}, для клиента #{clientId}");
 
@@ -104,9 +131,9 @@ namespace Restaurant.Booking
                         (IBookingRequest)new BookingRequested(
                             orderId,
                             clientId,
-                            new Dish { Id = _random.Next(0, 2) },
-                            bookingArrivalTime,
-                            actualArrivalTime
+                            new Dish { Id = 9999 },
+                            16,
+                            5
                             ),
                         stoppingToken);
                 }

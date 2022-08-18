@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Restaurant.Kitchen.Consumers;
+using Restaurant.Messages.CustomExceptions;
 
 namespace Restaurant.Kitchen
 {
@@ -30,7 +31,31 @@ namespace Restaurant.Kitchen
 
                     services.AddMassTransit(x =>
                     {
-                        x.AddConsumer<KitchenRequestedConsumer>()
+                        x.AddConsumer<KitchenRequestedConsumer>(
+                            configurator =>
+                            {
+                                configurator.UseScheduledRedelivery(config =>
+                                {
+                                    config.Interval(
+                                        1,
+                                        TimeSpan.FromSeconds(5));
+                                });
+                                configurator.UseMessageRetry(config =>
+                                {
+                                    config.Incremental(
+                                        retryLimit: 1,
+                                        initialInterval: TimeSpan.FromSeconds(10),
+                                        intervalIncrement: TimeSpan.FromSeconds(30));
+                                    config.Handle<KitchenException>();
+                                });
+                            }
+                            )
+                            .Endpoint(e =>
+                            {
+                                e.Temporary = true;
+                            });
+                        
+                        x.AddConsumer<KitchenFaultConsumer>()
                             .Endpoint(e =>
                             {
                                 e.Temporary = true;
@@ -65,6 +90,8 @@ namespace Restaurant.Kitchen
                                 r.Ignore<ArgumentNullException>(x => x.Message.Contains("Consumer"));
                             });
 
+                            cfg.UseDelayedMessageScheduler();
+                            cfg.UseInMemoryOutbox();
                             cfg.ConfigureEndpoints(context);
                         });
                     });

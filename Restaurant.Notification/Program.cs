@@ -30,11 +30,33 @@ namespace Restaurant.Notification
 
                     services.AddMassTransit(x =>
                     {
-                        x.AddConsumer<NotifyConsumer>()
+                        x.AddConsumer<NotifyConsumer>(
+                            configurator =>
+                            {
+                                configurator.UseScheduledRedelivery(config =>
+                                {
+                                    config.Interval(
+                                        2, // retry count
+                                        TimeSpan.FromSeconds(20));// interval
+                                });
+                                configurator.UseMessageRetry(config =>
+                                {
+                                    config.Incremental(
+                                        retryLimit: 2,
+                                        initialInterval: TimeSpan.FromSeconds(2),
+                                        intervalIncrement: TimeSpan.FromSeconds(4));
+                                });
+                            })
                             .Endpoint(e =>
                             {
                                 e.Temporary = true;
                             });
+
+                        x.AddConsumer<NotifyFaultConsumer>()
+                            .Endpoint(e =>
+                            {
+                                e.Temporary = true;
+                            }); 
 
                         x.UsingRabbitMq((context,cfg) =>
                         {
@@ -65,6 +87,8 @@ namespace Restaurant.Notification
                                 r.Ignore<ArgumentNullException>(x => x.Message.Contains("Consumer"));
                             });
 
+                            cfg.UseDelayedMessageScheduler();
+                            cfg.UseInMemoryOutbox();
                             cfg.ConfigureEndpoints(context);
                         });                      
                     });

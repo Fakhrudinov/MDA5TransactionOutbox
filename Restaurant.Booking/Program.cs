@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Restaurant.Booking.Consumers;
 using Restaurant.Booking.Saga;
+using Restaurant.Messages.CustomExceptions;
 
 namespace Restaurant.Booking
 {
@@ -31,7 +32,25 @@ namespace Restaurant.Booking
 
                     services.AddMassTransit(x =>
                     {
-                        x.AddConsumer<BookingRequestConsumer>()
+                        x.AddConsumer<BookingRequestConsumer>(
+                            configurator =>
+                            {
+                                configurator.UseScheduledRedelivery(config =>
+                                {
+                                    config.Intervals(
+                                        TimeSpan.FromSeconds(10),
+                                        TimeSpan.FromSeconds(20),
+                                        TimeSpan.FromSeconds(30));
+                                });
+                                configurator.UseMessageRetry(config =>
+                                {
+                                    config.Incremental(
+                                        retryLimit: 3, 
+                                        initialInterval: TimeSpan.FromSeconds(1),
+                                        intervalIncrement: TimeSpan.FromSeconds(2));
+                                    config.Handle<BookingException>();
+                                });
+                            })
                             .Endpoint(e =>
                             {
                                 e.Temporary = true;
@@ -52,8 +71,6 @@ namespace Restaurant.Booking
                         x.AddSagaStateMachine<RestaurantBookingSaga, RestaurantBooking>()
                             .Endpoint(e => e.Temporary = true)
                             .InMemoryRepository();
-
-                        x.AddDelayedMessageScheduler();
 
                         x.UsingRabbitMq((context,cfg) =>
                         {
