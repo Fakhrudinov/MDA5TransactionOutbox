@@ -3,6 +3,7 @@ using Restaurant.Messages.Interfaces;
 using System;
 using System.Threading.Tasks;
 using Restaurant.Booking.MassTransitDTO;
+using Restaurant.Messages.CustomExceptions;
 
 namespace Restaurant.Booking.Consumers
 {
@@ -35,7 +36,8 @@ namespace Restaurant.Booking.Consumers
             {
                 Console.WriteLine($"BookingRequestConsumer== [OrderId: {context.Message.OrderId}] Ошибка бронирования!");
 
-                await context.Publish<IBookingReject>(new BookingReject(context.Message.OrderId));
+                //await context.Publish<IBookingReject>(new BookingReject(context.Message.OrderId));
+                throw new BookingException($"Ошибка бронирования! для заказа {context.Message.OrderId}");
             }
         }
     }

@@ -2,6 +2,7 @@
 using System.Threading.Tasks;
 using MassTransit;
 using Restaurant.Kitchen.MassTransitDTO;
+using Restaurant.Messages.CustomExceptions;
 using Restaurant.Messages.Interfaces;
 
 namespace Restaurant.Kitchen.Consumers
@@ -17,7 +18,7 @@ namespace Restaurant.Kitchen.Consumers
 
         public async Task Consume(ConsumeContext<ITableBooked> context)
         {
-            var randomDelay = new Random().Next(100, 7000);
+            var randomDelay = new Random().Next(1_000, 10_000);
             Console.WriteLine($"Kitchen-KitchenRequestedConsumer=Проверим заказ #{context.Message.OrderId} на кухне, [id={context.Message.Dish.Id}] это займет {randomDelay}мс");
             await Task.Delay(randomDelay);
 
@@ -31,7 +32,14 @@ namespace Restaurant.Kitchen.Consumers
             else
             {
                 Console.WriteLine($"Kitchen-KitchenRequestedConsumer=заказ #{context.Message.OrderId} = failed, Publish KitchenAccident");
-                await context.Publish<IKitchenReject>(new KitchenReject(context.Message.OrderId, dish!));
+                if (context.Message.Dish.Name != null)
+                {
+                    throw new KitchenException($"KitchenException - Заказ с {context.Message.Dish.Name} вызывает у нас проблемы. #{context.Message.OrderId}");
+                }
+                else
+                {
+                    throw new KitchenException($"KitchenException - Заказ #{context.Message.OrderId} - у нас нет такого в меню");
+                }                
             }
         }
     }

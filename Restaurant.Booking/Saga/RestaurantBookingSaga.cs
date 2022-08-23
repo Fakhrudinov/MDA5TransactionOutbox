@@ -21,6 +21,8 @@ namespace Restaurant.Booking.Saga
         public Event BookingApprovedEvent { get; private set; }
         public Event<Fault<IBookingRequest>> BookingRequestFaultEvent { get; private set; }
 
+        public Event<Fault<ITableBooked>> KitchenFaultEvent { get; private set; }
+        public Event<Fault<INotify>> NotificationFaultEvent { get; private set; }
 
         public Schedule<RestaurantBooking, IBookingExpired> BookingExpiredSchedule { get; private set; }
         public Schedule<RestaurantBooking, IGuestWaitingExpired> BookingAwaitingGuestSchedule { get; private set; }
@@ -48,6 +50,12 @@ namespace Restaurant.Booking.Saga
             Event(() => BookingRequestFaultEvent,
                 x =>
                     x.CorrelateById(m => m.Message.Message.OrderId));
+            Event(() => KitchenFaultEvent,
+                x =>
+                    x.CorrelateById(m => m.Message.Message.OrderId));
+            Event(() => NotificationFaultEvent,
+                x =>
+                    x.CorrelateById(m => m.Message.Message.OrderId));
 
             CompositeEvent(() => BookingApprovedEvent,
                 x => x.ReadyEventStatus, KitchenReadyEvent, TableBookedEvent);
@@ -66,7 +74,7 @@ namespace Restaurant.Booking.Saga
             Schedule(() => BookingExpiredSchedule,
                 x => x.BookingExpirationId, x =>
                 {
-                    x.Delay = TimeSpan.FromSeconds(5);
+                    x.Delay = TimeSpan.FromSeconds(10);
                     x.Received = e => e.CorrelateById(context => context.Message.OrderId);
                 });
 
@@ -76,8 +84,7 @@ namespace Restaurant.Booking.Saga
                 {
                     x.Delay = TimeSpan.FromSeconds(1);
                     x.Received = e => e.CorrelateById(context => context.Message.OrderId);
-                }
-            );
+                });
 
             Schedule(() => BookingAwaitingGuestSchedule,
                 х => х.GuestAwaitingId,
@@ -85,8 +92,7 @@ namespace Restaurant.Booking.Saga
                 {
                     x.Delay = TimeSpan.FromSeconds(1);
                     x.Received = e => e.CorrelateById(context => context.Message.OrderId);
-                }
-            );
+                });
 
 
             Initially(
@@ -131,15 +137,38 @@ namespace Restaurant.Booking.Saga
                     .TransitionTo(AwaitingGuestArrived),
 
                 When(BookingRequestFaultEvent)//должно быть при эксепшене в IBookingRequested
+                    .Unschedule(BookingExpiredSchedule)
+                    .Unschedule(BookingAwaitingGuestSchedule)
+                    .Unschedule(ActualGuestArrivalSchedule)
                     .Then(context => 
                         Console.WriteLine($"Ошибочка вышла!"))
                     .Publish(context => (INotify)new Notify(
                         context.Instance.OrderId,
                         context.Instance.ClientId,
-                        $"Приносим извинения, стол забронировать не получилось."))
+                        $"Saga BookingRequestFaultEvent Приносим извинения, стол забронировать не получилось."))
                     .Publish(context => (IBookingCancelRequested)
                         new BookingCancell(context.Instance.OrderId))
                     .Finalize(),
+
+               When(KitchenFaultEvent)//должно быть при эксепшене в ITableBooked
+                    .Unschedule(BookingExpiredSchedule)
+                    .Unschedule(BookingAwaitingGuestSchedule)
+                    .Unschedule(ActualGuestArrivalSchedule)
+                    .Then(context =>
+                        Console.WriteLine("Saga KitchenFaultEvent На кухне произошла ошибка!"))
+                    .Publish(context => (INotify)new Notify(
+                        context.Instance.OrderId,
+                        context.Instance.ClientId,
+                        $"Saga KitchenFaultEvent Отмена кухни по заказу #{context.Instance.OrderId} в связи с отсутсвием блюда!"))
+                    .Publish(context => (IBookingCancelRequested)
+                        new BookingCancell(context.Instance.OrderId))
+                    .Finalize(),
+
+                When(NotificationFaultEvent)//должно быть при эксепшене в INotify?
+                    .Then(context => 
+                        Console.WriteLine("Saga NotificationFaultEvent В сервисе уведомлений произошла ошибка!"))
+                    .Finalize(),
+
 
                 When(BookingRejectEvent)//1 когда все столы заняты
                     .Unschedule(BookingExpiredSchedule)
@@ -150,7 +179,6 @@ namespace Restaurant.Booking.Saga
                         context.Instance.ClientId,
                         $"Saga BookingRejectEvent Приносим извинения, стол забронировать не получилось. #{context.Instance.OrderId} в связи с отсутсвием свободного стола!"))
                     .Finalize(),
-
 
                  When(KitchenRejectEvent)//2
                     .Unschedule(BookingExpiredSchedule)
